@@ -9,43 +9,52 @@
 
 #define MAX_SOCKS 300
 
-typedef struct sock_addr {
-	struct sockaddr_in addr;
-	int socket;
-	int idx;
-} SocketInfo;
+typedef struct rpi_server {
+	int sock;
+	pthread_t clients[MAX_SOCKS];
+	int hp;
+	pthread_mutex_t lock;
+} server_t;
 
-static int skt_ptr = 0;
-static int socket_desc;
-static SocketInfo* sockets[MAX_SOCKS];
-static pthread_mutex_t lock;
+typedef struct rpi_worker {
+	int sock;
+	server_t *server;
+} worker_t;
 
 
-void remove_from_buffer(SocketInfo *info) {
-	if(skt_ptr > 0){
-		sockets[info->idx] = sockets[--skt_ptr];
-		sockets[info->idx]->idx = skt_ptr;
+void remove_client(worker_t *w) {
+	pthread_t thnum = pthread_self();
+	server_t *s = w->server;
+	int indx = 0;
+	while(s->clients[indx] != thnum) {
+		indx++;
 	}
-	else
-		sockets[0] = 0;
-	printf("removed socket %d from buffer index %d\n", info->socket, info->idx);
+	if(s->hp > 0){
+		s->clients[indx] = s->clients[--(s->hp)];
+		printf("removed thread clients[%d]\n", indx);
+	}
+}
+
+void add_client(server_t *s, pthread_t th) {
+	s->clients[s->hp++] = th;
 }
 
 void* worker(void* arg) {
 	char magic[1];
 	int read_size;
-	SocketInfo* info = (SocketInfo*)arg;
+	worker_t *w = (worker_t*)arg;
 	printf("running th %d\n", pthread_self());
+
 	while(1){
-		read_size = recv(info->socket, magic, 1, MSG_WAITALL);
+		read_size = recv(w->sock, magic, 1, MSG_WAITALL);
 
 		if(read_size == 0) {
-			printf("socket closed %d\n");
-			int r = close(info->socket);
+			printf("socket closed %d\n", w->sock);
+			int r = close(w->sock);
 			if(r != 0)
 				puts("error while closing socket");
-
-			remove_from_buffer(info);
+			remove_client(w);
+			free(w);
 			return NULL;
 		}
 
@@ -58,63 +67,75 @@ void* worker(void* arg) {
 		printf("%d" ,magic[0] == 0xBB);
 	}
 
+	close(w->sock);
+	free(w);
 	return NULL;
 }
 
-void run_server(int port_server) {
-	int client_sock, c, read_size;
-	struct sockaddr_in server, client;
-	SocketInfo *info;
-	pthread_t skt_thread;
-	
-	socket_desc = socket(AF_INET, SOCK_STREAM, 0);
-	if(socket_desc == -1) {
+
+void* internal_run_server(void* arg) {
+	int client_sock, c;
+	struct sockaddr_in client;
+	pthread_t th_client;
+	server_t *serv;
+	worker_t *worker_data;
+
+	serv = (server_t *)arg;
+
+	c = sizeof(struct sockaddr_in);
+	while(1){
+		puts("waiting for an incoming connection");
+		client_sock = accept(serv->sock, (struct sockaddr *)&client, (socklen_t*)&c);
+
+		if (client_sock < 0)
+			break;
+		if(serv->hp < MAX_SOCKS){
+			worker_data = (worker_t*)malloc(sizeof(worker_t));
+			worker_data->sock = client_sock;
+			worker_data->server = serv;
+			if(pthread_create(&th_client, NULL, worker, (void*)worker_data)) {
+				puts("error on creaing a thread");
+				free(worker_data);
+				exit(1);
+			}
+			add_client(serv, th_client);
+			printf("Connection accepted: socket: %d, thread id %d\n", client_sock, th_client);
+		} else {
+			printf("Maximum number of sockets created: %d \n", MAX_SOCKS);
+			close(client_sock);
+		}
+	}
+	puts("shutdown server socket");
+	close(serv->sock);
+}
+
+pthread_t run_server(int port_server) {
+	int sock_server;
+	struct sockaddr_in server_addr;
+	pthread_t pth_server;
+	server_t *serv;
+
+	sock_server = socket(AF_INET, SOCK_STREAM, 0);
+	if(sock_server == -1) {
 		perror("bind failed");
 		exit(1);
 	}
-	puts("Socket created");
+	puts("Server Socket created");
 
-	server.sin_family = AF_INET;
-	server.sin_addr.s_addr = INADDR_ANY;
-	server.sin_port = htons(port_server);
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = INADDR_ANY;
+	server_addr.sin_port = htons(port_server);
 
-	if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0) {
+	if( bind(sock_server,(struct sockaddr *)&server_addr , sizeof(server_addr)) < 0) {
 		perror("bind failed. Error");
 		exit(1);
 	}
 	puts("bind done");
-
-	listen(socket_desc, 3);
-
-	c = sizeof(struct sockaddr_in);
-
-	while(1){
-		puts("waiting for an incoming connection");
-		client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c);
-
-		if (client_sock < 0)
-			break;
-		info = (SocketInfo*)malloc(sizeof(SocketInfo));
-		info->addr = client;
-		info->socket = client_sock;
-		info->idx = skt_ptr;
-		sockets[skt_ptr++] = info;
-		if(pthread_create(&skt_thread, NULL, worker, (void*)info)) {
-			puts("error on creaing a thread");
-			exit(1);
-		}
-		printf("Connection accepted: socket: %d, thread id %d\n", client_sock, skt_thread);
-	}
-	puts("shutdown server socket");
-	close(socket_desc);
-
+	listen(sock_server, 3);
+	serv = (server_t*)malloc(sizeof(server_t));
+	serv->sock = sock_server;
+	pthread_create(&pth_server, NULL, internal_run_server, (void*)serv);
+	return pth_server;
 }
 
-void shutdown_server() {
-	int s = close(socket_desc);
-	if(s >= 0)
-		puts("closed serversocket successfully");
-	else
-		puts("error while closing serversocket");
-}
 

@@ -1,7 +1,8 @@
 #ifndef RPISERVER_H
 #define RPISERVER_H
+#include <pthread.h>
 
 
-void run_server(int port_server);
+pthread_t run_server(int port_server);
 
 #endif
