@@ -9,6 +9,7 @@
 #include <string.h>
 
 int temp = 2;
+struct rpi_t data;
 
 void handler(char* packet, int size) {
 	char msgs[50] = {'\0'};
@@ -18,25 +19,62 @@ void handler(char* packet, int size) {
 		strcat(msgs, msg);
 	}
 	log_info("received %s", msgs);
+	data.group = packet[2] & 0xff;
+	data.node = packet[1] & 0xff;
+	data.type = packet[4] & 0xff;
+	data.data = ((packet[5] << 8) | (packet[6] & 0xff)) & 0xffff;
 }
 
 
 START_TEST(rpi_sending) {
-
-}
-END_TEST
-
-START_TEST(rpi_receiving) {
+	log_trace("=======  rpi_sending test =======");
+	const int GROUP = 20;
+	const int NODE  = 21;
+	const int TYPE  = 22;
+	const int DATA  = 2345;
+	struct rpi_t d;
+	d.group = GROUP;
+	d.node = NODE;
+	d.type = TYPE;
+	d.data = DATA;
 	struct timespec ts;
 	ts.tv_sec = 0;
 	ts.tv_nsec = 200000000L;
 
-	pthread_t t = run_server(2000, handler);
+
+	pthread_t t = ems_run_server(2000, handler);
 	nanosleep(&ts, NULL);
 
-	test_send_packet(2000,10,11,12,1234);
-	destroy(t);
-//   pthread_join(t, NULL);
+	// TODO: Create server and receive data
+
+	// Packet is send from the RPi side
+	ems_send(&d);
+
+	// Check received data
+}
+END_TEST
+
+START_TEST(rpi_receiving) {
+	log_trace("=======  rpi_receiving test =======");
+	const int GROUP = 10;
+	const int NODE  = 11;
+	const int TYPE  = 12;
+	const int DATA  = 1234;
+	struct timespec ts;
+	ts.tv_sec = 0;
+	ts.tv_nsec = 200000000L;
+
+	pthread_t t = ems_run_server(2000, handler);
+	nanosleep(&ts, NULL);
+	ems_send2("127.0.0.1",2000,10,11,12,1234);
+	nanosleep(&ts, NULL);
+	ems_destroy(t);
+//   pthread_join(t, NULL)
+
+	ck_assert_int_eq(data.group, GROUP);
+	ck_assert_int_eq(data.node, NODE);
+	ck_assert_int_eq(data.type, TYPE);
+	ck_assert_int_eq(data.data, DATA);
 }
 END_TEST
 

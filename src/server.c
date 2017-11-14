@@ -139,7 +139,7 @@ void* worker(void* arg) {
 		read_size = recv(w->sock, magic, 4, MSG_WAITALL);
 
 		if(read_size == 0)
-			return NULL;
+			pthread_exit(NULL);
 
 		if((magic[0] & 0xff) != 0xBB) {
 			magic[0] = 0;
@@ -154,7 +154,7 @@ void* worker(void* arg) {
 
 		if(read_size == 0){
 			free(data);
-			return NULL;
+			pthread_exit(NULL);
 		}
 		
 		int total_packet_size = 4 + packet_size;
@@ -168,11 +168,11 @@ void* worker(void* arg) {
 	close(w->sock);
 	free(w);
 	pthread_cleanup_pop(1);
-	return NULL;
+	pthread_exit(NULL);
 }
 
 
-void* internal_run_server(void* arg) {
+void* server_fn(void* arg) {
 	int client_sock, c;
 	struct sockaddr_in client;
 	pthread_t th_client;
@@ -197,7 +197,7 @@ void* internal_run_server(void* arg) {
 			if(pthread_create(&th_client, NULL, worker, (void*)worker_data)) {
 				log_warn("error on creaing a thread");
 				free(worker_data);
-				return NULL;
+				pthread_exit(NULL);
 			}
 			worker_data->thread = th_client;
 			add_client(serv, worker_data);
@@ -210,7 +210,7 @@ void* internal_run_server(void* arg) {
 	log_info("shutdown server socket");
 	close(serv->sock);
 	pthread_cleanup_pop(1);
-	return NULL;
+	pthread_exit(NULL);
 }
 
 void set_lock(void *udata, int lock) {
@@ -221,7 +221,7 @@ void set_lock(void *udata, int lock) {
 		pthread_mutex_unlock(mutex);
 }
 
-pthread_t run_server(int port_server, void (*handler)(char *, int)){
+pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 	log_set_level(LOG_LEVEL);
 	int sock_server;
 	struct sockaddr_in server_addr;
@@ -262,12 +262,12 @@ pthread_t run_server(int port_server, void (*handler)(char *, int)){
 	serv->hp = 0;
 	serv->sock = sock_server;
 	serv->handler = handler;
-	pthread_create(&pth_server, NULL, internal_run_server, (void*)serv);
+	pthread_create(&pth_server, NULL, server_fn, (void*)serv);
 	log_debug("Started server id-%d", pth_server);
 	return pth_server;
 }
 
-int send_packet(struct rpiout_t *p) {
+int ems_send(struct rpi_t *p) {
 	char packet[RP_LEN];
 	packet[0] = 0xAA;
 	packet[1] = RP_LEN;
@@ -283,15 +283,18 @@ int send_packet(struct rpiout_t *p) {
 		server_t *serv = serv_list.l[i];
 		log_debug("For server running socket %d", serv->sock);
 		for(int j=0; j<serv->hp; j++){
-			log_debug("Client %d with fd %d", j, serv->clients[j]);
-			// TODO: send data over TCP socket using serv->clients[]
+			log_debug("Client %d with fd %d", j, serv->clients[j]->sock);
+			if(send(serv->clients[j]->sock, packet, RP_LEN + 1, 0) < 0) {
+				log_error("send failed");
+				return -1;
+			}
+			log_debug("Unit test: Messsage sent");
 		}
 	}
-
 	return 1;
 }
 
-int destroy(pthread_t s) {
+int ems_destroy(pthread_t s) {
 
 	pthread_mutex_lock(&gLock);
 
@@ -311,7 +314,7 @@ int destroy(pthread_t s) {
 /*
  * Unit testing functions
  */
-int test_send_packet(int port, int group, int node, int type, int data) {
+int ems_send2(char *ip, int port, int group, int node, int type, int data) {
 	struct sockaddr_in server;
 	int sock;
 	char msg[50];
@@ -321,7 +324,7 @@ int test_send_packet(int port, int group, int node, int type, int data) {
 		return -1;
 	}
 
-	server.sin_addr.s_addr = inet_addr("127.0.0.1");
+	server.sin_addr.s_addr = inet_addr(ip);
 	server.sin_family = AF_INET;
 	server.sin_port = htons(port);
 
