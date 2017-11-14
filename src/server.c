@@ -31,6 +31,7 @@ typedef struct rpi_server {
 	worker_t *clients[MAX_SOCKS];
 	int hp;
 	pthread_mutex_t lock;
+	void (*handler)(char* packet, int size);
 } server_t;
 
 typedef struct rpi_worker {
@@ -87,6 +88,7 @@ void cleanup_server(void *arg) {
 		shutdown(s->clients[i]->sock, 2);
 		close(s->clients[i]->sock);
 		pthread_cancel(s->clients[i]->thread);
+		pthread_join(s->clients[i]->thread, NULL);
 	}
 	free(s);
 	log_info("Cleaned up server id-%d", pthread_self());
@@ -94,8 +96,12 @@ void cleanup_server(void *arg) {
 
 void cleanup_worker(void *arg) {
 	worker_t *w = (worker_t *)arg;
-	shutdown(w->sock, 2);
+	log_info("socket closed %d", w->sock);
 	close(w->sock);
+//   if(r != 0)
+//     log_warn("error while closing socket: %s", strerror(errno));
+	remove_client(w);
+	free(w);
 	log_debug("Worker thread is destroyed id-%d", pthread_self());
 }
 
@@ -121,19 +127,6 @@ void parse_incoming_packet(char* b1, int sizeofb1, char* b2, int sizeofb2) {
 	log_debug("%s", str);
 }
 
-int check_read(int read_size, worker_t *w) {
-	if(read_size == 0) {
-		log_info("socket closed %d", w->sock);
-		int r = close(w->sock);
-		if(r != 0)
-			log_warn("error while closing socket");
-		remove_client(w);
-		free(w);
-		return 0;
-	}
-	return 1;
-}
-
 void* worker(void* arg) {
 	char *data;
 	char magic[4];
@@ -145,7 +138,7 @@ void* worker(void* arg) {
 	while(1){
 		read_size = recv(w->sock, magic, 4, MSG_WAITALL);
 
-		if(!check_read(read_size, w))
+		if(read_size == 0)
 			return NULL;
 
 		if((magic[0] & 0xff) != 0xBB) {
@@ -156,13 +149,20 @@ void* worker(void* arg) {
 
 		int packet_size = magic[3];
 		int data_size = sizeof(char) * packet_size;
-		data = (char*)malloc(sizeof(char) * packet_size);
+		data = (char*)malloc(data_size);
 		read_size = recv(w->sock, data, packet_size, MSG_WAITALL);
 
-		if(!check_read(read_size, w))
+		if(read_size == 0){
+			free(data);
 			return NULL;
+		}
 		
-		parse_incoming_packet(magic, 4, data, data_size);
+		int total_packet_size = 4 + packet_size;
+		char packet[total_packet_size];
+		memcpy(packet, magic, 4);
+		memcpy(&packet[4], data, packet_size);
+		w->server->handler(packet, total_packet_size);
+//     parse_incoming_packet(magic, 4, data, data_size);
 		free(data);
 	}
 
@@ -223,7 +223,7 @@ void set_lock(void *udata, int lock) {
 		
 }
 
-pthread_t run_server(int port_server) {
+pthread_t run_server(int port_server, void (*handler)(char *, int)){
 	log_set_level(LOG_LEVEL);
 	int sock_server;
 	struct sockaddr_in server_addr;
@@ -264,12 +264,13 @@ pthread_t run_server(int port_server) {
 	listen(sock_server, 3);
 	serv->hp = 0;
 	serv->sock = sock_server;
+	serv->handler = handler;
 	pthread_create(&pth_server, NULL, internal_run_server, (void*)serv);
 	log_debug("Started server id-%d", pth_server);
 	return pth_server;
 }
 
-void send_packet(struct rpiout_t *p) {
+int send_packet(struct rpiout_t *p) {
 	char packet[RP_LEN];
 	packet[0] = 0xAA;
 	packet[1] = RP_LEN;
@@ -289,6 +290,8 @@ void send_packet(struct rpiout_t *p) {
 			// TODO: send data over TCP socket using serv->clients[]
 		}
 	}
+
+	return 1;
 }
 
 int destroy(pthread_t s) {
@@ -300,6 +303,8 @@ int destroy(pthread_t s) {
 		return -1;
 	}
 
+	pthread_join(s, NULL);
+
 	log_info("Stopped server id-%d", s);
 
 	pthread_mutex_unlock(&gLock);
@@ -309,6 +314,40 @@ int destroy(pthread_t s) {
 /*
  * Unit testing functions
  */
-void test_send_packet(int group, int node, int type, int data) {
+int test_send_packet(int port, int group, int node, int type, int data) {
+	struct sockaddr_in server;
+	int sock;
+	char msg[50];
 
+	if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		log_error("Could not create socket");
+		return -1;
+	}
+
+	server.sin_addr.s_addr = inet_addr("127.0.0.1");
+	server.sin_family = AF_INET;
+	server.sin_port = htons(port);
+
+	if(connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0) {
+		log_error("Connect failed");
+		return -1;
+	}
+
+	log_debug("Mock client connected to server");
+	msg[0] = 0xBB;
+	msg[1] = node & 0xff;
+	msg[2] = group & 0xff;
+	msg[3] = 3;
+	msg[4] = type & 0xff;
+	msg[5] = (data & 0xffff) >> 8;
+	msg[6] = data & 0xff;
+
+	if(send(sock, msg, 7, 0) < 0) {
+		log_error("send failed");
+		return -1;
+	}
+	log_debug("Unit test: Messsage sent");
+	
+//   close(sock);
+	return 1;
 }

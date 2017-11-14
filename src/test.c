@@ -6,6 +6,20 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
+
+int temp = 2;
+
+void handler(char* packet, int size) {
+	char msgs[50] = {'\0'};
+	char msg[5];
+	for(int i=0; i<size; i++){
+		sprintf(msg, "%02X ", packet[i] & 0xff);
+		strcat(msgs, msg);
+	}
+	log_info("received %s", msgs);
+}
+
 
 START_TEST(rpi_sending) {
 
@@ -17,12 +31,13 @@ START_TEST(rpi_receiving) {
 	ts.tv_sec = 0;
 	ts.tv_nsec = 200000000L;
 
-	pthread_t t = run_server(2000);	
+	pthread_t t = run_server(2000, handler);
 	log_debug("ran server");
 	nanosleep(&ts, NULL);
 
-	test_send_packet(10,11,12,1234);
-//   destroy(t);
+	test_send_packet(2000,10,11,12,1234);
+	destroy(t);
+//   pthread_join(t, NULL);
 }
 END_TEST
 
