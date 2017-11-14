@@ -23,16 +23,19 @@
 #define RP_LEN     BASE_LEN + DATA_SIZE + FT_LEN
 
 static pthread_mutex_t log_lock;
+static pthread_mutex_t gLock;
+typedef struct rpi_worker worker_t;
 
 typedef struct rpi_server {
 	int sock;
-	pthread_t clients[MAX_SOCKS];
+	worker_t *clients[MAX_SOCKS];
 	int hp;
 	pthread_mutex_t lock;
 } server_t;
 
 typedef struct rpi_worker {
 	int sock;
+	pthread_t thread;
 	server_t *server;
 } worker_t;
 
@@ -48,32 +51,52 @@ void remove_client(worker_t *w) {
 	pthread_t thnum = pthread_self();
 	server_t *s = w->server;
 	int indx = 0;
-	while(s->clients[indx] != thnum) {
+	while(s->clients[indx]->thread != thnum) {
 		indx++;
 	}
 
 	pthread_mutex_lock(&s->lock);
 	if(s->hp > 0){
 		s->clients[indx] = s->clients[--(s->hp)];
-		log_info("removed thread clients[%d]\n", indx);
+		log_info("removed thread clients[%d]", indx);
 	}
 	pthread_mutex_unlock(&s->lock);
 }
 
-void add_client(server_t *s, pthread_t th) {
+void add_client(server_t *s, worker_t *c) {
 	pthread_mutex_lock(&s->lock);
 
-	s->clients[s->hp++] = th;
+	s->clients[s->hp++] = c;
 
 	pthread_mutex_unlock(&s->lock);
 }
 
 void add_server(server_t *serv) {
-	pthread_mutex_lock(&log_lock);
+	pthread_mutex_lock(&gLock);
 
 	serv_list.l[serv_list.p++] = serv;
 
-	pthread_mutex_unlock(&log_lock);
+	pthread_mutex_unlock(&gLock);
+}
+
+
+void cleanup_server(void *arg) {
+	server_t *s = (server_t *)arg;
+	for(int i=0; i<s->hp; i++) {
+		log_debug("Cancelling worker thread id-%d socket %d", s->clients[i]->thread, s->clients[i]->sock);
+		shutdown(s->clients[i]->sock, 2);
+		close(s->clients[i]->sock);
+		pthread_cancel(s->clients[i]->thread);
+	}
+	free(s);
+	log_info("Cleaned up server id-%d", pthread_self());
+}
+
+void cleanup_worker(void *arg) {
+	worker_t *w = (worker_t *)arg;
+	shutdown(w->sock, 2);
+	close(w->sock);
+	log_debug("Worker thread is destroyed id-%d", pthread_self());
 }
 
 /*
@@ -85,14 +108,14 @@ void parse_incoming_packet(char* b1, int sizeofb1, char* b2, int sizeofb2) {
 	log_debug("received magic size: %d", sizeofb1);
 	sprintf(str, "Magic bytes: ");
 	for(int i=0;i<sizeofb1 ; i++){
-		sprintf(msg, "%02X \0", b1[i] & 0xff);
+		sprintf(msg, "%02X ", b1[i] & 0xff);
 		strcat(str, msg);
 	}
 	log_debug("%s", str);
 	log_debug("received data size: %d", sizeofb2);
 	sprintf(str, "Data bytes: ");
 	for(int i=0;i<sizeofb2 ; i++){
-		sprintf(msg, "%02X \0", b2[i] & 0xff);
+		sprintf(msg, "%02X ", b2[i] & 0xff);
 		strcat(str, msg);
 	}
 	log_debug("%s", str);
@@ -116,7 +139,8 @@ void* worker(void* arg) {
 	char magic[4];
 	int read_size;
 	worker_t *w = (worker_t*)arg;
-	log_debug("running th %d", pthread_self());
+	pthread_cleanup_push(cleanup_worker, (void *)w);
+	log_debug("Running worker thread id-%d", pthread_self());
 
 	while(1){
 		read_size = recv(w->sock, magic, 4, MSG_WAITALL);
@@ -144,6 +168,7 @@ void* worker(void* arg) {
 
 	close(w->sock);
 	free(w);
+	pthread_cleanup_pop(1);
 	return NULL;
 }
 
@@ -156,6 +181,7 @@ void* internal_run_server(void* arg) {
 	worker_t *worker_data;
 
 	serv = (server_t *)arg;
+	pthread_cleanup_push(cleanup_server, (void *)serv);
 
 	c = sizeof(struct sockaddr_in);
 	while(1){
@@ -174,15 +200,18 @@ void* internal_run_server(void* arg) {
 				free(worker_data);
 				exit(1);
 			}
-			add_client(serv, th_client);
+			worker_data->thread = th_client;
+			add_client(serv, worker_data);
 			log_info("Connection accepted: socket: %d, thread id %d", client_sock, th_client);
 		} else {
-			printf("Maximum number of sockets created: %d \n", MAX_SOCKS);
+			printf("Maximum number of sockets created: %d", MAX_SOCKS);
 			close(client_sock);
 		}
 	}
 	log_info("shutdown server socket");
 	close(serv->sock);
+	pthread_cleanup_pop(1);
+	return NULL;
 }
 
 void set_lock(void *udata, int lock) {
@@ -205,6 +234,11 @@ pthread_t run_server(int port_server) {
 
 	if(pthread_mutex_init(&log_lock, NULL) != 0) {
 		log_error("Mutex log_lock init failed");
+		exit(1);
+	}
+
+	if(pthread_mutex_init(&gLock, NULL) != 0) {
+		log_error("Mutex gLock init failed");
 		exit(1);
 	}
 
@@ -231,6 +265,7 @@ pthread_t run_server(int port_server) {
 	serv->hp = 0;
 	serv->sock = sock_server;
 	pthread_create(&pth_server, NULL, internal_run_server, (void*)serv);
+	log_debug("Started server id-%d", pth_server);
 	return pth_server;
 }
 
@@ -254,7 +289,26 @@ void send_packet(struct rpiout_t *p) {
 			// TODO: send data over TCP socket using serv->clients[]
 		}
 	}
-
-
 }
 
+int destroy(pthread_t s) {
+
+	pthread_mutex_lock(&gLock);
+
+	if(pthread_cancel(s) != 0){
+		log_warn("Could not cancel server thread %d", s);
+		return -1;
+	}
+
+	log_info("Stopped server id-%d", s);
+
+	pthread_mutex_unlock(&gLock);
+	return 0;
+}
+
+/*
+ * Unit testing functions
+ */
+void test_send_packet(int group, int node, int type, int data) {
+
+}

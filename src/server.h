@@ -19,4 +19,6 @@ pthread_t run_server(int port_server);
 
 void send_packet(struct rpiout_t *p);
 
+int destroy(pthread_t s);
+
 #endif
