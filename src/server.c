@@ -85,10 +85,15 @@ void cleanup_server(void *arg) {
 	server_t *s = (server_t *)arg;
 	for(int i=0; i<s->hp; i++) {
 		log_debug("Cancelling worker thread id-%d socket %d", s->clients[i]->thread, s->clients[i]->sock);
-		shutdown(s->clients[i]->sock, 2);
+		shutdown(s->clients[i]->sock, SHUT_RDWR);
 		close(s->clients[i]->sock);
 		pthread_cancel(s->clients[i]->thread);
 		pthread_join(s->clients[i]->thread, NULL);
+	}
+	shutdown(s->sock, SHUT_RDWR);
+	int result = close(s->sock);
+	if(result != 0) {
+		log_error("error while closing server socket: %s", strerror(errno));
 	}
 	free(s);
 	log_info("Cleaned up server id-%d", pthread_self());
@@ -97,6 +102,7 @@ void cleanup_server(void *arg) {
 void cleanup_worker(void *arg) {
 	worker_t *w = (worker_t *)arg;
 	log_info("socket closed %d", w->sock);
+	shutdown(w->sock, SHUT_RDWR);
 	close(w->sock);
 //   if(r != 0)
 //     log_warn("error while closing socket: %s", strerror(errno));
@@ -165,8 +171,6 @@ void* worker(void* arg) {
 		free(data);
 	}
 
-	close(w->sock);
-	free(w);
 	pthread_cleanup_pop(1);
 	pthread_exit(NULL);
 }
@@ -204,11 +208,10 @@ void* server_fn(void* arg) {
 			log_info("Connection accepted: socket: %d, thread id %d", client_sock, th_client);
 		} else {
 			printf("Maximum number of sockets created: %d", MAX_SOCKS);
+			shutdown(client_sock, SHUT_RDWR);
 			close(client_sock);
 		}
 	}
-	log_info("shutdown server socket");
-	close(serv->sock);
 	pthread_cleanup_pop(1);
 	pthread_exit(NULL);
 }
@@ -248,6 +251,12 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 		log_error("bind failed");
 		exit(1);
 	}
+	int enable = 1;
+	if (setsockopt(sock_server, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) == -1) {
+		log_error("setsockopt");
+		exit(1);
+	}
+
 	log_debug("Server Socket created");
 
 	server_addr.sin_family = AF_INET;
