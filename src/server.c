@@ -162,7 +162,6 @@ void* worker(void* arg) {
 		memcpy(packet, magic, 4);
 		memcpy(&packet[4], data, packet_size);
 		w->server->handler(packet, total_packet_size);
-//     parse_incoming_packet(magic, 4, data, data_size);
 		free(data);
 	}
 
@@ -198,7 +197,7 @@ void* internal_run_server(void* arg) {
 			if(pthread_create(&th_client, NULL, worker, (void*)worker_data)) {
 				log_warn("error on creaing a thread");
 				free(worker_data);
-				exit(1);
+				return NULL;
 			}
 			worker_data->thread = th_client;
 			add_client(serv, worker_data);
@@ -220,7 +219,6 @@ void set_lock(void *udata, int lock) {
 		pthread_mutex_lock(mutex);
 	else
 		pthread_mutex_unlock(mutex);
-		
 }
 
 pthread_t run_server(int port_server, void (*handler)(char *, int)){
@@ -260,7 +258,6 @@ pthread_t run_server(int port_server, void (*handler)(char *, int)){
 		log_error("bind failed. Error");
 		exit(1);
 	}
-	log_debug("bind done");
 	listen(sock_server, 3);
 	serv->hp = 0;
 	serv->sock = sock_server;

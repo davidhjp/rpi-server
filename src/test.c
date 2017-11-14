@@ -32,7 +32,6 @@ START_TEST(rpi_receiving) {
 	ts.tv_nsec = 200000000L;
 
 	pthread_t t = run_server(2000, handler);
-	log_debug("ran server");
 	nanosleep(&ts, NULL);
 
 	test_send_packet(2000,10,11,12,1234);
