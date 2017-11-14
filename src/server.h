@@ -17,12 +17,14 @@ struct rpi_t {
  */
 pthread_t ems_run_server(int port_server, void (*handler)(char *, int));
 
+// To send packet to the clients (sysj program)
 int ems_send(struct rpi_t *p);
 
-int ems_send2(char* ip, int port, int group, int node, int type, int data);
-
+// To close sockets and terminate server threads.
 int ems_destroy(pthread_t s);
 
+// The following functions are only for testing purpose, use the above ones for the real thing
+int ems_send2(char* ip, int port, int group, int node, int type, int data);
 pthread_t ems_test_run_client(char *ip, int port, void (*handler)(char*, int));
 
 #endif
