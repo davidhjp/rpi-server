@@ -23,4 +23,6 @@ int ems_send2(char* ip, int port, int group, int node, int type, int data);
 
 int ems_destroy(pthread_t s);
 
+pthread_t ems_test_run_client(char *ip, int port, void (*handler)(char*, int));
+
 #endif

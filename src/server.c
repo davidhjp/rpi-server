@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
-// #include <stdint.h>
+#include <stdint.h>
 #include "log.h"
 #include "server.h"
 
@@ -21,6 +21,7 @@
 #define FT_LEN     3
 #define BASE_LEN   10
 #define RP_LEN     BASE_LEN + DATA_SIZE + FT_LEN
+#define BB_LEN     RP_LEN + 2
 
 static pthread_mutex_t log_lock;
 static pthread_mutex_t gLock;
@@ -257,7 +258,7 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 		exit(1);
 	}
 
-	log_debug("Server Socket created");
+	log_debug("Server Socket created with sock %d",sock_server);
 
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -277,7 +278,7 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 }
 
 int ems_send(struct rpi_t *p) {
-	char packet[RP_LEN];
+	char packet[BB_LEN];
 	packet[0] = 0xAA;
 	packet[1] = RP_LEN;
 	packet[9] = p->group & 0xff;
@@ -292,8 +293,8 @@ int ems_send(struct rpi_t *p) {
 		server_t *serv = serv_list.l[i];
 		log_debug("For server running socket %d", serv->sock);
 		for(int j=0; j<serv->hp; j++){
-			log_debug("Client %d with fd %d", j, serv->clients[j]->sock);
-			if(send(serv->clients[j]->sock, packet, RP_LEN + 1, 0) < 0) {
+			log_debug("Client[%d] with fd %d", j, serv->clients[j]->sock);
+			if(send(serv->clients[j]->sock, packet, BB_LEN, 0) < 0) {
 				log_error("send failed");
 				return -1;
 			}
@@ -357,6 +358,79 @@ int ems_send2(char *ip, int port, int group, int node, int type, int data) {
 	}
 	log_debug("Unit test: Messsage sent");
 	
-//   close(sock);
+	close(sock);
 	return 1;
+}
+
+struct test_param {
+	void (*handler)(char*, int);
+	int sock;
+};
+
+void *ems_test_client(void *arg) {
+	struct test_param *parg = (struct test_param*)arg;
+	char magic[2];
+
+	if(recv(parg->sock, magic, 2, MSG_WAITALL) < 0) {
+		log_error("Socket closed");
+		close(parg->sock);
+		return (void*)(intptr_t)-3;
+	}
+
+	if((magic[0] & 0xff) == 0xAA) {
+		int len = magic[1] & 0xff;			
+		char *data = (char*)malloc(sizeof(char) * len);
+
+		if(recv(parg->sock, data, len, MSG_WAITALL) < 0) {
+		log_error("Socket closed");
+			free(data);
+			close(parg->sock);
+			return (void*)(intptr_t)-3;
+		}
+
+		char *packet = (char*)malloc(sizeof(char) * (len + 2));
+		memcpy(packet, magic, 2);
+		memcpy(&packet[2], data, len);
+
+		parg->handler(packet, len + 2);
+		free(data);
+		free(packet);
+		close(parg->sock);
+		return (void*)(intptr_t)0;
+	} else {
+		log_error("Wrong magic byte");
+		return (void*)(intptr_t)-4;
+	}
+
+}
+
+pthread_t ems_test_run_client(char *ip, int port, void (*handler)(char*, int)){
+
+	pthread_t th_client;
+	int sock;
+	struct sockaddr_in server;
+
+	sock = socket(AF_INET, SOCK_STREAM, 0);
+	if(sock == -1) {
+		perror("Could not create socket");
+		return NULL;
+	}
+	log_debug("Socket created");
+
+	server.sin_addr.s_addr = inet_addr(ip);
+	server.sin_family = AF_INET;
+	server.sin_port = htons(port);
+
+	if(connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
+		perror("Connect failed");
+		return NULL;
+	}
+	log_debug("Connected socket fd: %d", sock);
+
+	struct test_param *param =  (struct test_param *)malloc(sizeof(struct test_param));
+	param->handler = handler;
+	param->sock = sock;
+
+	pthread_create(&th_client, NULL, ems_test_client, (void *)param);
+	return th_client;
 }

@@ -11,8 +11,8 @@
 int temp = 2;
 struct rpi_t data;
 
-void handler(char* packet, int size) {
-	char msgs[50] = {'\0'};
+void handler_rec(char* packet, int size) {
+	char msgs[200] = {'\0'};
 	char msg[5];
 	for(int i=0; i<size; i++){
 		sprintf(msg, "%02X ", packet[i] & 0xff);
@@ -23,6 +23,20 @@ void handler(char* packet, int size) {
 	data.node = packet[1] & 0xff;
 	data.type = packet[4] & 0xff;
 	data.data = ((packet[5] << 8) | (packet[6] & 0xff)) & 0xffff;
+}
+
+void handler_send(char* packet, int size) {
+	char msgs[200] = {'\0'};
+	char msg[5];
+	for(int i=0; i<size; i++){
+		sprintf(msg, "%02X ", packet[i] & 0xff);
+		strcat(msgs, msg);
+	}
+	log_info("received %s", msgs);
+	data.group = packet[9] & 0xff;
+	data.node = packet[10] & 0xff;
+	data.type = packet[11] & 0xff;
+	data.data = ((packet[12] << 8) | (packet[13] & 0xff)) & 0xffff;
 }
 
 
@@ -41,16 +55,26 @@ START_TEST(rpi_sending) {
 	ts.tv_sec = 0;
 	ts.tv_nsec = 200000000L;
 
-
-	pthread_t t = ems_run_server(2000, handler);
+	pthread_t t = ems_run_server(2000, handler_rec);
 	nanosleep(&ts, NULL);
 
-	// TODO: Create server and receive data
+	// TODO: Create a client and receive data
+	pthread_t tc = ems_test_run_client("127.0.0.1", 2000, handler_send);
+	ck_assert(tc != NULL);
+	nanosleep(&ts, NULL);
 
-	// Packet is send from the RPi side
-	ems_send(&d);
+	// Packet is sent from the RPi side
+	ck_assert(ems_send(&d) > 0);
+
+	int *r;
+	pthread_join(tc, (void**)&r);
+	ck_assert(r == 0);
 
 	// Check received data
+	ck_assert_int_eq(data.group, GROUP);
+	ck_assert_int_eq(data.node, NODE);
+	ck_assert_int_eq(data.type, TYPE);
+	ck_assert_int_eq(data.data, DATA);
 }
 END_TEST
 
@@ -64,12 +88,12 @@ START_TEST(rpi_receiving) {
 	ts.tv_sec = 0;
 	ts.tv_nsec = 200000000L;
 
-	pthread_t t = ems_run_server(2000, handler);
+	pthread_t t = ems_run_server(2000, handler_rec);
 	nanosleep(&ts, NULL);
 	ems_send2("127.0.0.1",2000,10,11,12,1234);
 	nanosleep(&ts, NULL);
 	ems_destroy(t);
-//   pthread_join(t, NULL)
+	pthread_join(t, NULL);
 
 	ck_assert_int_eq(data.group, GROUP);
 	ck_assert_int_eq(data.node, NODE);
