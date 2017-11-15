@@ -127,28 +127,33 @@ Suite *rpi_create(void) {
 	return s;
 }
 
-int main() {
-//   pthread_t t = run_server(2000);	
-//   getchar();
-//   struct rpiout_t p;
-//   p.group	= 12;
-//   p.node = 11;
-//   p.type = 10;
-//   p.data = 1234;
-//   log_debug("## Sending packet");
-//   send_packet(&p);
-//   pthread_join(t, NULL);
+int main(int argc, char* arg[]) {
+	if(argc > 1 && strcmp(arg[1], "run") == 0){
+		struct rpi_t p;
+		pthread_t t = ems_run_server(3000, handler_rec);
+		uint16_t freq = 0;
+		while(1){
+			getchar();
+			p.group	= 12;
+			p.node = 101;
+			p.type = 12;
+			p.data = ++freq;
+			log_debug("## Sending packet group: %d, node: %d, type: %d, data: %d",p.group, p.node, p.type, p.data);
+			ems_send(&p);
+		}
+		ems_destroy(t);
+	} else {
+		int number_failed;
+		Suite *s;
+		SRunner *sr;
 
-	int number_failed;
-	Suite *s;
-	SRunner *sr;
+		s = rpi_create();
+		sr = srunner_create(s);
 
-	s = rpi_create();
-	sr = srunner_create(s);
+		srunner_run_all(sr, CK_NORMAL);
+		number_failed = srunner_ntests_failed(sr);
+		srunner_free(sr);
 
-	srunner_run_all(sr, CK_NORMAL);
-	number_failed = srunner_ntests_failed(sr);
-	srunner_free(sr);
-
-	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+		return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+	}
 }

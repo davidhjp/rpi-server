@@ -5,7 +5,7 @@ OBJ_FILES=$(patsubst %.c,%.o,$(SRC_FILES))
 LOG_LEVEL=LOG_TRACE
 CFLAGS=-Wall
 LIBS=-lcheck -lpthread
-MAC=-DLOG_USE_COLOR -DLOG_LEVEL=$(LOG_LEVEL)
+MAC=-DLOG_USE_COLOR -DLOG_LEVEL=$(LOG_LEVEL) 
 
 test: $(OBJ_FILES)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
