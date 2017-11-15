@@ -9,7 +9,7 @@ rpi-server implementation in C (Experimental)
 - `int ems_destroy(pthread_t s)` - To release resources and terminate the server.
 - `ems_send2()`, `ems_test_run_client()` - Used for unit testing.
 
-## `rpi_i` struct
+## Struct `rpi_i`
 ```c
 struct rpi_i {
   uint8_t group;
