@@ -75,6 +75,9 @@ START_TEST(rpi_sending) {
 	ck_assert_int_eq(data.node, NODE);
 	ck_assert_int_eq(data.type, TYPE);
 	ck_assert_int_eq(data.data, DATA);
+
+	ck_assert(ems_destroy(t) == 0);
+	pthread_join(t, NULL);
 }
 END_TEST
 
@@ -113,7 +116,6 @@ Suite *rpi_create(void) {
 	tcase_add_test(tc_core, rpi_receiving);
 	tcase_add_test(tc_core, rpi_sending);
 
-	tcase_set_timeout(tc_core, 100);
 	suite_add_tcase(s, tc_core);
 
 	return s;
