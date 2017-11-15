@@ -358,8 +358,7 @@ int ems_send2(char *ip, int port, int group, int node, int type, int data) {
 	}
 	log_debug("Unit test: Messsage sent");
 	
-	close(sock);
-	return 1;
+	return sock;
 }
 
 struct test_param {

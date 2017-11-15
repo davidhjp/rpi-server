@@ -8,8 +8,11 @@
 #include <time.h>
 #include <string.h>
 
-int temp = 2;
 struct rpi_t data;
+
+long conv_ms_ns(int ms) {
+	return ms * 1000000;
+}
 
 void handler_rec(char* packet, int size) {
 	char msgs[200] = {'\0'};
@@ -53,7 +56,7 @@ START_TEST(rpi_sending) {
 	d.data = DATA;
 	struct timespec ts;
 	ts.tv_sec = 0;
-	ts.tv_nsec = 200000000L;
+	ts.tv_nsec = conv_ms_ns(200);
 
 	pthread_t t = ems_run_server(2000, handler_rec);
 	nanosleep(&ts, NULL);
@@ -89,12 +92,15 @@ START_TEST(rpi_receiving) {
 	const int DATA  = 1234;
 	struct timespec ts;
 	ts.tv_sec = 0;
-	ts.tv_nsec = 200000000L;
+	ts.tv_nsec = conv_ms_ns(200);
 
 	pthread_t t = ems_run_server(2000, handler_rec);
 	nanosleep(&ts, NULL);
-	ems_send2("127.0.0.1",2000,10,11,12,1234);
+	int sock = ems_send2("127.0.0.1",2000,10,11,12,1234);
+	ck_assert(sock > 0);
+	ts.tv_nsec = conv_ms_ns(300); // Just to make sure that the server gets the value before closing the socket
 	nanosleep(&ts, NULL);
+	close(sock);
 	ems_destroy(t);
 	pthread_join(t, NULL);
 
