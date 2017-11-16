@@ -133,9 +133,7 @@ void cleanup_server(void *arg) {
 		log_debug("Cancelling worker thread id-%d socket %d", s->clients[i]->thread, s->clients[i]->sock);
 		shutdown(s->clients[i]->sock, SHUT_RDWR);
 		close(s->clients[i]->sock);
-		log_debug("3");
 		pthread_cancel(s->clients[i]->thread);
-		log_debug("cannn");
 		w_ths[i] = s->clients[i]->thread;
 	}
 	mutex_unlock(s->lock);
