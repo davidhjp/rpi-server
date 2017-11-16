@@ -475,8 +475,8 @@ pthread_t ems_test_run_client(char *ip, int port, void (*handler)(char*, int)){
 
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock == -1) {
-		perror("Could not create socket");
-		return NULL;
+		log_error("Could not create socket");
+		exit(1);
 	}
 	log_debug("Socket created");
 
@@ -485,8 +485,8 @@ pthread_t ems_test_run_client(char *ip, int port, void (*handler)(char*, int)){
 	server.sin_port = htons(port);
 
 	if(connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
-		perror("Connect failed");
-		return NULL;
+		log_error("Connect failed");
+		exit(1);
 	}
 	log_debug("Connected socket fd: %d", sock);
 

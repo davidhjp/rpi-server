@@ -73,7 +73,6 @@ START_TEST(rpi_sending) {
 
 	// TODO: Create a client and receive data
 	pthread_t tc = ems_test_run_client("127.0.0.1", 2000, handler_send);
-	ck_assert(tc != NULL);
 	nanosleep(&ts, NULL);
 
 	// Packet is sent from the RPi side
