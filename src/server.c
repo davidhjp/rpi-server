@@ -23,6 +23,18 @@
 #define RP_LEN     BASE_LEN + DATA_SIZE + FT_LEN
 #define BB_LEN     RP_LEN + 2
 
+#define mutex_lock(_lock) {\
+	int _val = pthread_mutex_lock(_lock); \
+	if(_val != 0) {\
+		log_error("Could not acquire lock: %p, %s", _lock, strerror(_val));\
+	}}
+
+#define mutex_unlock(_lock) {\
+	int _val = pthread_mutex_unlock(_lock); \
+	if(_val != 0) {\
+		log_error("Could not acquire lock: %p, %s", _lock, strerror(_val));\
+	}}
+
 static pthread_mutex_t log_lock;
 static pthread_mutex_t gLock;
 typedef struct rpi_worker worker_t;
@@ -31,7 +43,8 @@ typedef struct rpi_server {
 	int sock;
 	worker_t *clients[MAX_SOCKS];
 	int hp;
-	pthread_mutex_t lock;
+	pthread_mutex_t *lock;
+	pthread_t thread;
 	void (*handler)(char* packet, int size);
 } server_t;
 
@@ -48,7 +61,6 @@ struct server_array {
 
 struct server_array serv_list = { .p = 0 };
 
-
 void remove_client(worker_t *w) {
 	pthread_t thnum = pthread_self();
 	server_t *s = w->server;
@@ -57,59 +69,103 @@ void remove_client(worker_t *w) {
 		indx++;
 	}
 
-	pthread_mutex_lock(&s->lock);
+//   mutex_lock(s->lock);
 	if(s->hp > 0){
 		s->clients[indx] = s->clients[--(s->hp)];
+		s->clients[s->hp] = NULL;
 		log_info("removed thread clients[%d]", indx);
+	} else {
+		s->clients[0] = NULL;
 	}
-	pthread_mutex_unlock(&s->lock);
+//   mutex_unlock(s->lock);
 }
 
 void add_client(server_t *s, worker_t *c) {
-	pthread_mutex_lock(&s->lock);
+	mutex_lock(s->lock);
 
 	s->clients[s->hp++] = c;
 
-	pthread_mutex_unlock(&s->lock);
+	mutex_unlock(s->lock);
 }
 
 void add_server(server_t *serv) {
-	pthread_mutex_lock(&gLock);
+	mutex_lock(&gLock);
 
 	serv_list.l[serv_list.p++] = serv;
 
-	pthread_mutex_unlock(&gLock);
+	mutex_unlock(&gLock);
+}
+
+void remove_server(server_t *serv) {
+	int indx;
+	int found = 0;
+
+	mutex_lock(&gLock);
+	for(int i=0;i < serv_list.p; i++){
+			if(serv_list.l[i] == serv)	{
+				indx = i;
+				found = 1;
+			}
+	}
+	if(found == 0) {
+		log_warn("Could not find server (%p, th-id %d) in the list", serv, serv->thread);
+		return;
+	}
+
+	if(serv_list.p > 0){
+		serv_list.l[indx] = serv_list.l[--(serv_list.p)];
+		serv_list.l[serv_list.p] = NULL;
+	} else {
+		serv_list.l[0] = NULL;
+	}
+
+	mutex_unlock(&gLock);
 }
 
 
 void cleanup_server(void *arg) {
 	server_t *s = (server_t *)arg;
+
+	mutex_lock(s->lock);
+	pthread_t w_ths[s->hp];
+	int w_size = s->hp;
 	for(int i=0; i<s->hp; i++) {
 		log_debug("Cancelling worker thread id-%d socket %d", s->clients[i]->thread, s->clients[i]->sock);
 		shutdown(s->clients[i]->sock, SHUT_RDWR);
 		close(s->clients[i]->sock);
+		log_debug("3");
 		pthread_cancel(s->clients[i]->thread);
-		pthread_join(s->clients[i]->thread, NULL);
+		log_debug("cannn");
+		w_ths[i] = s->clients[i]->thread;
 	}
+	mutex_unlock(s->lock);
+
+	for(int i=0; i<w_size; i++){
+		pthread_join(w_ths[i], NULL);
+	}
+
+	free(s->lock);
 	shutdown(s->sock, SHUT_RDWR);
 	int result = close(s->sock);
 	if(result != 0) {
 		log_error("error while closing server socket: %s", strerror(errno));
 	}
+	remove_server(s);
 	free(s);
 	log_info("Cleaned up server id-%d", pthread_self());
 }
 
 void cleanup_worker(void *arg) {
 	worker_t *w = (worker_t *)arg;
-	log_info("socket closed %d", w->sock);
+	pthread_mutex_t *lock = w->server->lock;
+	mutex_lock(lock);
 	shutdown(w->sock, SHUT_RDWR);
 	close(w->sock);
-//   if(r != 0)
-//     log_warn("error while closing socket: %s", strerror(errno));
+	log_info("Worker socket closed %d", w->sock);
 	remove_client(w);
 	free(w);
 	log_debug("Worker thread is destroyed id-%d", pthread_self());
+	mutex_unlock(lock);
 }
 
 /*
@@ -199,13 +255,15 @@ void* server_fn(void* arg) {
 			worker_data = (worker_t*)malloc(sizeof(worker_t));
 			worker_data->sock = client_sock;
 			worker_data->server = serv;
+			add_client(serv, worker_data);
+
 			if(pthread_create(&th_client, NULL, worker, (void*)worker_data)) {
 				log_warn("error on creaing a thread");
 				free(worker_data);
 				pthread_exit(NULL);
 			}
 			worker_data->thread = th_client;
-			add_client(serv, worker_data);
+
 			log_info("Connection accepted: socket: %d, thread id %d", client_sock, th_client);
 		} else {
 			printf("Maximum number of sockets created: %d", MAX_SOCKS);
@@ -232,7 +290,6 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 	pthread_t pth_server;
 	server_t *serv = (server_t*)malloc(sizeof(server_t));
 
-	add_server(serv);
 
 	if(pthread_mutex_init(&log_lock, NULL) != 0) {
 		log_error("Mutex log_lock init failed");
@@ -244,6 +301,7 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 		exit(1);
 	}
 
+	add_server(serv);
 	log_set_udata(&log_lock);
 	log_set_lock(set_lock);
 
@@ -272,7 +330,16 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 	serv->hp = 0;
 	serv->sock = sock_server;
 	serv->handler = handler;
+	pthread_mutex_t * lock = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t));
+	
+	if(pthread_mutex_init(lock, NULL) != 0) {
+		log_error("Mutex serv->lock failed");
+		exit(1);
+	}
+	serv->lock = lock;
+
 	pthread_create(&pth_server, NULL, server_fn, (void*)serv);
+	serv->thread = pth_server;
 	log_debug("Started server id-%d", pth_server);
 	return pth_server;
 }
@@ -306,8 +373,6 @@ int ems_send(struct rpi_t *p) {
 
 int ems_destroy(pthread_t s) {
 
-	pthread_mutex_lock(&gLock);
-
 	if(pthread_cancel(s) != 0){
 		log_warn("Could not cancel server thread %d", s);
 		return -1;
@@ -317,7 +382,6 @@ int ems_destroy(pthread_t s) {
 
 	log_info("Stopped server id-%d", s);
 
-	pthread_mutex_unlock(&gLock);
 	return 0;
 }
 

@@ -10,8 +10,18 @@
 
 struct rpi_t data;
 
+pthread_barrier_t barr;
+
+void handler_rec(char* packet, int size);
+
 long conv_ms_ns(int ms) {
 	return ms * 1000000;
+}
+
+
+void handler_rec_barrier(char *packet, int size) {
+	handler_rec(packet, size);
+	pthread_barrier_wait(&barr);
 }
 
 void handler_rec(char* packet, int size) {
@@ -94,14 +104,15 @@ START_TEST(rpi_receiving) {
 	ts.tv_sec = 0;
 	ts.tv_nsec = conv_ms_ns(200);
 
-	pthread_t t = ems_run_server(2000, handler_rec);
+	pthread_t t = ems_run_server(2000, handler_rec_barrier);
 	nanosleep(&ts, NULL);
 	int sock = ems_send2("127.0.0.1",2000,10,11,12,1234);
 	ck_assert(sock > 0);
-	ts.tv_nsec = conv_ms_ns(300); // Just to make sure that the server gets the value before closing the socket
-	nanosleep(&ts, NULL);
+
+	pthread_barrier_wait(&barr);
+
 	close(sock);
-	ems_destroy(t);
+	ck_assert(ems_destroy(t) == 0);
 	pthread_join(t, NULL);
 
 	ck_assert_int_eq(data.group, GROUP);
@@ -146,6 +157,7 @@ int main(int argc, char* arg[]) {
 		int number_failed;
 		Suite *s;
 		SRunner *sr;
+		pthread_barrier_init(&barr, NULL, 2);
 
 		s = rpi_create();
 		sr = srunner_create(s);
