@@ -201,6 +201,10 @@ void* worker(void* arg) {
 
 		if(read_size == 0)
 			pthread_exit(NULL);
+		else if (read_size < 0) {
+			log_debug("Error occured: %s", strerror(errno));
+			pthread_exit(NULL);
+		}
 
 		if((magic[0] & 0xff) != 0xBB) {
 			magic[0] = 0;
