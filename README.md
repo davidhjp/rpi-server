@@ -20,23 +20,27 @@ struct rpi_i {
 ```
 
 ## Packet format
-## Incoming packet
+### Incoming packet
 ```
 0xBB <NodeID> <GroupID> <Sub-packet length> <Sub-packet Type> <Data 0>...<Data N-1>
 ```
-## Outgoing packet
+### Outgoing packet
 ```
 0xAA <Packet Length> \
 <FCR1><FCR2><Packet count><PAN ID H><PAN ID L> \
 <Dest GroupID><Dest NodeID><Source GroupID><Source NodeID><Packet Type> \
 <Data 0>...<Data N-1><Footer 1><Footer 2><Footer 3>
 ```
+For the outgoing packet, only the following fields are read:
+`0xAA`, `<Packet Length>`, `<Packet count>`, `<Source GroupID>`, `<Source NodeID>`, `<Packet Type>`, and
+`<Data 0><Data 1>`.
+All other fields can be set to zero. Lastly, It is assumed that the data fields are always **16-bit** long (2 bytes).
 
 ## Packet types
-### Incoming packets for RPi
+### Incoming packet
 - `16` - Priority
 - `11` - Power
-### Outgoing packets for RPi
+### Outgoing packet
 - `12` - Frequency
 - `13` - Power
 - `14` - Current
