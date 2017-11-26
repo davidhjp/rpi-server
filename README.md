@@ -19,5 +19,16 @@ struct rpi_i {
 }
 ```
 
+## Packet types
+### Incoming packets for RPi
+- `16` - Priority
+- `11` - Power
+### Outgoing packets for RPi
+- `12` - Frequency
+- `13` - Power
+- `14` - Current
+- `15` - Voltage
+
+
 
 See `server.h` and `server.c` for more details.
