@@ -19,6 +19,19 @@ struct rpi_i {
 }
 ```
 
+## Packet format
+## Incoming packet
+```
+0xBB <NodeID> <GroupID> <Sub-packet length> <Sub-packet Type> <Data 0>...<Data N-1>
+```
+## Outgoing packet
+```
+0xAA <Packet Length> \
+<FCR1><FCR2><Packet count><PAN ID H><PAN ID L> \
+<Dest GroupID><Dest NodeID><Source GroupID><Source NodeID><Packet Type> \
+<Data 0>...<Data N-1><Footer 1><Footer 2><Footer 3>
+```
+
 ## Packet types
 ### Incoming packets for RPi
 - `16` - Priority
