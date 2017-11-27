@@ -145,10 +145,25 @@ int main(int argc, char* arg[]) {
 		while(1){
 			getchar();
 			p.group	= 12;
+			p.node = 201;
+			p.type = 13;
+			p.data = ++freq;
+			log_debug("## Sending packet group: %d, node: %d, type: %d, data: %d",p.group, p.node, p.type, p.data);
+			ems_send(&p);
+			p.group	= 12;
+			p.node = 201;
+			p.type = 14;
+			p.data = ++freq;
+			ems_send(&p);
+			p.group	= 12;
+			p.node = 201;
+			p.type = 15;
+			p.data = ++freq;
+			ems_send(&p);
+			p.group	= 12;
 			p.node = 101;
 			p.type = 12;
 			p.data = ++freq;
-			log_debug("## Sending packet group: %d, node: %d, type: %d, data: %d",p.group, p.node, p.type, p.data);
 			ems_send(&p);
 		}
 		ems_destroy(t);
