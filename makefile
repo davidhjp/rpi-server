@@ -4,7 +4,7 @@ SRC_FILES=$(shell find $(SRC_DIR) -type f -name *.c)
 OBJ_FILES=$(patsubst %.c,%.o,$(SRC_FILES))
 LOG_LEVEL=LOG_TRACE
 CFLAGS=-Wall
-LIBS=-lcheck -lpthread
+LIBS=-lpthread `pkg-config --libs check`
 MAC=-DLOG_USE_COLOR -DLOG_LEVEL=$(LOG_LEVEL) 
 
 test: $(OBJ_FILES)
