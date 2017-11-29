@@ -1,5 +1,8 @@
 # rpi-server
+[![Build Status](https://travis-ci.org/hjparker/rpi-server.svg?branch=master)](https://travis-ci.org/hjparker/rpi-server)
+
 rpi-server implementation in C (Experimental)
+
 
 - Run `make` to build and test the program.
 
