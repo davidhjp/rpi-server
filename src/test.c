@@ -25,9 +25,10 @@ void handler_rec_barrier(char *packet, int size) {
 }
 
 void handler_rec(char* packet, int size) {
+	int i;
 	char msgs[200] = {'\0'};
 	char msg[5];
-	for(int i=0; i<size; i++){
+	for(i=0; i<size; i++){
 		sprintf(msg, "%02X ", packet[i] & 0xff);
 		strcat(msgs, msg);
 	}
@@ -39,9 +40,10 @@ void handler_rec(char* packet, int size) {
 }
 
 void handler_send(char* packet, int size) {
+	int i;
 	char msgs[200] = {'\0'};
 	char msg[5];
-	for(int i=0; i<size; i++){
+	for(i=0; i<size; i++){
 		sprintf(msg, "%02X ", packet[i] & 0xff);
 		strcat(msgs, msg);
 	}

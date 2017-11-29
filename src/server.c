@@ -97,11 +97,11 @@ void add_server(server_t *serv) {
 }
 
 void remove_server(server_t *serv) {
-	int indx;
+	int indx, i;
 	int found = 0;
 
 	mutex_lock(&gLock);
-	for(int i=0;i < serv_list.p; i++){
+	for(i=0;i < serv_list.p; i++){
 			if(serv_list.l[i] == serv)	{
 				indx = i;
 				found = 1;
@@ -124,12 +124,13 @@ void remove_server(server_t *serv) {
 
 
 void cleanup_server(void *arg) {
+	int i;
 	server_t *s = (server_t *)arg;
 
 	mutex_lock(s->lock);
 	pthread_t w_ths[s->hp];
 	int w_size = s->hp;
-	for(int i=0; i<s->hp; i++) {
+	for(i=0; i<s->hp; i++) {
 		log_debug("Cancelling worker thread id-%d socket %d", s->clients[i]->thread, s->clients[i]->sock);
 		shutdown(s->clients[i]->sock, SHUT_RDWR);
 		close(s->clients[i]->sock);
@@ -138,7 +139,7 @@ void cleanup_server(void *arg) {
 	}
 	mutex_unlock(s->lock);
 
-	for(int i=0; i<w_size; i++){
+	for(i=0; i<w_size; i++){
 		pthread_join(w_ths[i], NULL);
 	}
 
@@ -170,18 +171,19 @@ void cleanup_worker(void *arg) {
  * This is where the packets can be read
  */
 void parse_incoming_packet(char* b1, int sizeofb1, char* b2, int sizeofb2) {
+	int i;
 	char str[1000];
 	char msg[10];
 	log_debug("received magic size: %d", sizeofb1);
 	sprintf(str, "Magic bytes: ");
-	for(int i=0;i<sizeofb1 ; i++){
+	for(i=0;i<sizeofb1 ; i++){
 		sprintf(msg, "%02X ", b1[i] & 0xff);
 		strcat(str, msg);
 	}
 	log_debug("%s", str);
 	log_debug("received data size: %d", sizeofb2);
 	sprintf(str, "Data bytes: ");
-	for(int i=0;i<sizeofb2 ; i++){
+	for(i=0;i<sizeofb2 ; i++){
 		sprintf(msg, "%02X ", b2[i] & 0xff);
 		strcat(str, msg);
 	}
@@ -347,6 +349,7 @@ pthread_t ems_run_server(int port_server, void (*handler)(char *, int)){
 }
 
 int ems_send(struct rpi_t *p) {
+	int i, j;
 	char packet[BB_LEN];
 	packet[0] = 0xAA;
 	packet[1] = RP_LEN;
@@ -358,10 +361,10 @@ int ems_send(struct rpi_t *p) {
 
 	int s_size = serv_list.p;
 	log_debug("send_packet: server #: %d", s_size);
-	for(int i=0; i<s_size; i++) {
+	for(i=0; i<s_size; i++) {
 		server_t *serv = serv_list.l[i];
 		log_debug("For server running socket %d", serv->sock);
-		for(int j=0; j<serv->hp; j++){
+		for(j=0; j<serv->hp; j++){
 			log_debug("Client[%d] with fd %d", j, serv->clients[j]->sock);
 			if(send(serv->clients[j]->sock, packet, BB_LEN, 0) < 0) {
 				log_error("send failed");
