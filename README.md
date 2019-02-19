@@ -1,5 +1,5 @@
 # rpi-server
-[![Build Status](https://travis-ci.org/hjparker/rpi-server.svg?branch=master)](https://travis-ci.org/hjparker/rpi-server)
+[![Build Status](https://travis-ci.org/davidhjp/rpi-server.svg?branch=master)](https://travis-ci.org/davidhjp/rpi-server)
 
 rpi-server implementation in C (Experimental)
 
