@@ -52,3 +52,10 @@ All other fields can be set to zero. Lastly, It is assumed that the data fields 
 
 
 See `server.h` and `server.c` for more details.
+
+
+## Related Publications
+
+Tulabing, Ryan, Brian Mitchell, Jason James, Heejong Park, John Boys, Zoran Salcic, and Grant Covic. "Integration of Distributed Energy Resources and Enhancing Local Grid Load Factor using Localized Demand Control." In 2020 IEEE/PES Transmission and Distribution Conference and Exposition (T&D), pp. 1-5. IEEE, 2020.
+
+Tulabing, Ryan, Jason James, Brian Mitchell, Heejong Park, John Boys, Zoran Salcic, and Grant Covic. "Mitigation of Local Grid Congestion Due to Electric Vehicles Through Localized Demand Control." In 2018 IEEE Innovative Smart Grid Technologies-Asia (ISGT Asia), pp. 254-259. IEEE, 2018.
